@@ -1,0 +1,38 @@
+global_defs {
+  router_id LVS_INSTANCE_NAME
+}
+
+
+vrrp_instance VI_1 {
+    state MASTER
+    interface ens2
+    garp_master_delay 10
+    smtp_alert
+    virtual_router_id 51
+    priority 100
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass 1111
+    }
+    virtual_ipaddress {
+        {{ vip }}
+    }
+}
+
+
+virtual_server {{ vip }} 80 {
+  delay_loop 10
+  lb_algo rr
+  lb_kind DR
+  persistence_timeout 60
+  protocol TCP
+
+  real_server {{ hostvars['backend']['ansible_host'] }} 80 {
+    weight 1
+    TCP_CHECK {
+      connect_timeout 10
+      connect_port    80
+    }
+  }
+}
