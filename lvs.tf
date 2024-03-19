@@ -12,23 +12,23 @@ variable "private_subnet_id" {
 }
 
 variable "ip_frontend" {
-  default = "192.168.22.22"
+  default = "192.168.21.22"
 }
 
 variable "ip_backend" {
-  default = "192.168.22.19"
+  default = "192.168.21.19"
 }
 
 variable "ip_test" {
-  default = "192.168.22.14"
+  default = "192.168.21.14"
 }
 
 variable "ip_test2" {
-  default = "192.168.22.23"
+  default = "192.168.21.23"
 }
 
 variable "ip_vip" {
-  default = "192.168.22.43"
+  default = "192.168.21.43"
 }
 
 provider "openstack" {
