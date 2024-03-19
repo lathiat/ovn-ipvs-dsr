@@ -6,11 +6,6 @@ variable "stateless" {
   default = true
 }
 
-variable "private_subnet_id" {
-  #default = "82b47e39-8ea1-44db-b194-f14759572021"
-  default = "1009563e-400e-4727-b58a-f1bfcc7f5637"
-}
-
 variable "ip_frontend" {
   default = "192.168.21.22"
 }
@@ -47,13 +42,12 @@ resource "openstack_compute_keypair_v2" "zlab" {
   public_key = file("~/.ssh/id_rsa.pub")
 }
 
-###########################
-# Must import             #
-
-# terraform import openstack_networking_network_v2.private  $(openstack network show private -f value -c id)
-resource "openstack_networking_network_v2" "private" {
+data "openstack_networking_network_v2" "private" {
   name = "private"
-  admin_state_up = "true"
+}
+
+data "openstack_networking_subnet_v2" "private_subnet" {
+  name = "private_subnet"
 }
 
 # openstack provider doesn't support stateless security groups
@@ -62,15 +56,10 @@ resource "openstack_networking_network_v2" "private" {
 # secgroup=$(openstack security group create stateless_all --stateless -f value -c id)
 # openstack security group rule create $secgroup --protocol any --ethertype IPv4
 # openstack security group rule create $secgroup --protocol any --ethertype IPv6
-#
-# terraform import openstack_networking_secgroup_v2.stateless_all  $(openstack security group show stateless_all -f value -c id)
 
-resource "openstack_networking_secgroup_v2" "stateless_all" {
+data "openstack_networking_secgroup_v2" "stateless_all" {
   name = "stateless_all"
-  description = "stateless_all"
 }
-
-###########################
 
 resource "openstack_networking_secgroup_v2" "test" {
   name = "test"
@@ -95,10 +84,10 @@ resource "openstack_networking_secgroup_rule_v2" "test_rule_2" {
 
 resource "openstack_networking_port_v2" "vip_port" {
   name           = "vip_port"
-  network_id     = openstack_networking_network_v2.private.id
+  network_id     = data.openstack_networking_network_v2.private.id
   admin_state_up = "true"
   fixed_ip {
-    subnet_id = var.private_subnet_id
+    subnet_id = data.openstack_networking_subnet_v2.private_subnet.id
     ip_address = var.ip_vip
   }
   #port_security_enabled = false
@@ -123,12 +112,12 @@ resource "openstack_compute_instance_v2" "frontend" {
 
 resource "openstack_networking_port_v2" "frontend_port" {
   name           = "frontend_port"
-  network_id     = openstack_networking_network_v2.private.id
+  network_id     = data.openstack_networking_network_v2.private.id
   admin_state_up = "true"
   mac_address    = "fa:16:3e:0e:cf:c5"
 
   fixed_ip {
-    subnet_id = var.private_subnet_id
+    subnet_id = data.openstack_networking_subnet_v2.private_subnet.id
     ip_address = var.ip_frontend
   }
 
@@ -169,11 +158,11 @@ resource "openstack_compute_instance_v2" "backend" {
 
 resource "openstack_networking_port_v2" "backend_port" {
   name           = "backend_port"
-  network_id     = openstack_networking_network_v2.private.id
+  network_id     = data.openstack_networking_network_v2.private.id
   admin_state_up = "true"
   mac_address    = "fa:16:3e:e4:d4:58"
   fixed_ip {
-    subnet_id = var.private_subnet_id
+    subnet_id = data.openstack_networking_subnet_v2.private_subnet.id
     ip_address = var.ip_backend
   }
 
@@ -205,12 +194,12 @@ resource "openstack_compute_instance_v2" "test_instance" {
 
 resource "openstack_networking_port_v2" "test_port" {
   name           = "test_port"
-  network_id     = openstack_networking_network_v2.private.id
+  network_id     = data.openstack_networking_network_v2.private.id
   admin_state_up = "true"
   mac_address    = "fa:16:3e:e8:2f:a6"
 
   fixed_ip {
-    subnet_id = var.private_subnet_id
+    subnet_id = data.openstack_networking_subnet_v2.private_subnet.id
     ip_address = var.ip_test
   }
 
@@ -241,11 +230,11 @@ resource "openstack_compute_instance_v2" "test2" {
 
 resource "openstack_networking_port_v2" "test2_port" {
   name           = "test2_port"
-  network_id     = openstack_networking_network_v2.private.id
+  network_id     = data.openstack_networking_network_v2.private.id
   admin_state_up = "true"
   mac_address    = "fa:16:3e:4a:41:ad"
   fixed_ip {
-    subnet_id = var.private_subnet_id
+    subnet_id = data.openstack_networking_subnet_v2.private_subnet.id
     ip_address = var.ip_test2
   }
   security_group_ids = [openstack_networking_secgroup_v2.test.id]
