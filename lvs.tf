@@ -1,5 +1,45 @@
+# Note: Unfortunately the terraform inventory provider for ansible doesn't seem
+# to support workspaces, so only the default workspace works.
+
+variable "stateless" {
+  type = bool
+  default = true
+}
+
+variable "private_subnet_id" {
+  #default = "82b47e39-8ea1-44db-b194-f14759572021"
+  default = "1009563e-400e-4727-b58a-f1bfcc7f5637"
+}
+
+variable "ip_frontend" {
+  default = "192.168.22.22"
+}
+
+variable "ip_backend" {
+  default = "192.168.22.19"
+}
+
+variable "ip_test" {
+  default = "192.168.22.14"
+}
+
+variable "ip_test2" {
+  default = "192.168.22.23"
+}
+
+variable "ip_vip" {
+  default = "192.168.22.43"
+}
+
 provider "openstack" {
 # Uses the environment variables by default
+}
+
+resource "openstack_images_image_v2" "jammy" {
+  name             = "jammy"
+  image_source_url = "https://cloud-images.ubuntu.com/releases/jammy/release/ubuntu-22.04-server-cloudimg-amd64.img"
+  container_format = "bare"
+  disk_format      = "qcow2"
 }
 
 resource "openstack_compute_keypair_v2" "zlab" {
@@ -7,10 +47,30 @@ resource "openstack_compute_keypair_v2" "zlab" {
   public_key = file("~/.ssh/id_rsa.pub")
 }
 
+###########################
+# Must import             #
+
+# terraform import openstack_networking_network_v2.private  $(openstack network show private -f value -c id)
 resource "openstack_networking_network_v2" "private" {
   name = "private"
   admin_state_up = "true"
 }
+
+# openstack provider doesn't support stateless security groups
+# or rules for any protocol
+
+# secgroup=$(openstack security group create stateless_all --stateless -f value -c id)
+# openstack security group rule create $secgroup --protocol any --ethertype IPv4
+# openstack security group rule create $secgroup --protocol any --ethertype IPv6
+#
+# terraform import openstack_networking_secgroup_v2.stateless_all  $(openstack security group show stateless_all -f value -c id)
+
+resource "openstack_networking_secgroup_v2" "stateless_all" {
+  name = "stateless_all"
+  description = "stateless_all"
+}
+
+###########################
 
 resource "openstack_networking_secgroup_v2" "test" {
   name = "test"
@@ -37,6 +97,10 @@ resource "openstack_networking_port_v2" "vip_port" {
   name           = "vip_port"
   network_id     = openstack_networking_network_v2.private.id
   admin_state_up = "true"
+  fixed_ip {
+    subnet_id = var.private_subnet_id
+    ip_address = var.ip_vip
+  }
   #port_security_enabled = false
   #allowed_address_pairs {
   #  ip_address = "192.168.21.230"
@@ -48,7 +112,7 @@ resource "openstack_networking_port_v2" "vip_port" {
 # Frontend Instance (keepalived)
 resource "openstack_compute_instance_v2" "frontend" {
   name        = "frontend"
-  image_name  = "jammy"
+  image_id    = openstack_images_image_v2.jammy.id
   flavor_name = "m1.small"
   key_pair    = openstack_compute_keypair_v2.zlab.name
 
@@ -61,17 +125,40 @@ resource "openstack_networking_port_v2" "frontend_port" {
   name           = "frontend_port"
   network_id     = openstack_networking_network_v2.private.id
   admin_state_up = "true"
-  #allowed_address_pairs {
-  #  ip_address = "192.168.21.230"
+  mac_address    = "fa:16:3e:0e:cf:c5"
+
+  fixed_ip {
+    subnet_id = var.private_subnet_id
+    ip_address = var.ip_frontend
+  }
+
+  #no_security_groups = !var.stateless
+  #port_security_enabled = var.stateless
+
+  #dynamic "allowed_address_pairs" {
+  #  for_each = var.stateless ? [1] : []
+  #  content {
+  #    ip_address = openstack_networking_port_v2.vip_port.all_fixed_ips[0]
+  #  }
   #}
+
+  #security_group_ids = var.stateless ? [openstack_networking_secgroup_v2.stateless_all.id] : []
+
   no_security_groups = true
   port_security_enabled = false
+
+  #security_group_ids = [openstack_networking_secgroup_v2.stateless_all.id]
+  #port_security_enabled = true
+  #allowed_address_pairs {
+  #  ip_address = openstack_networking_port_v2.vip_port.all_fixed_ips[0]
+  #}
+
 }
 
 # Backend Instance (apache2)
 resource "openstack_compute_instance_v2" "backend" {
   name        = "backend"
-  image_name  = "jammy"
+  image_id    = openstack_images_image_v2.jammy.id
   flavor_name = "m1.small"
   key_pair    = openstack_compute_keypair_v2.zlab.name
 
@@ -84,20 +171,30 @@ resource "openstack_networking_port_v2" "backend_port" {
   name           = "backend_port"
   network_id     = openstack_networking_network_v2.private.id
   admin_state_up = "true"
+  mac_address    = "fa:16:3e:e4:d4:58"
+  fixed_ip {
+    subnet_id = var.private_subnet_id
+    ip_address = var.ip_backend
+  }
 
-  #port_security_enabled = false
-  #allowed_address_pairs {
-  #  ip_address = "192.168.21.230"
-  #}
+  no_security_groups = !var.stateless
+  port_security_enabled = var.stateless
 
-  no_security_groups = true
-  port_security_enabled = false
+  dynamic "allowed_address_pairs" {
+    for_each = var.stateless ? [1] : []
+    content {
+      ip_address = openstack_networking_port_v2.vip_port.all_fixed_ips[0]
+    }
+  }
+
+  #security_group_ids = var.stateless ? [openstack_networking_secgroup_v2.stateless_all.id] : []
+  security_group_ids = [openstack_networking_secgroup_v2.test.id]
 }
 
 # Test Instance (without security group)
 resource "openstack_compute_instance_v2" "test_instance" {
   name        = "test"
-  image_name  = "jammy"
+  image_id    = openstack_images_image_v2.jammy.id
   flavor_name = "m1.small"
   key_pair    = openstack_compute_keypair_v2.zlab.name
 
@@ -110,12 +207,19 @@ resource "openstack_networking_port_v2" "test_port" {
   name           = "test_port"
   network_id     = openstack_networking_network_v2.private.id
   admin_state_up = "true"
-  #port_security_enabled = false
-  #allowed_address_pairs {
-  #  ip_address = "192.168.21.230"
-  #}
-  no_security_groups = true
-  port_security_enabled = false
+  mac_address    = "fa:16:3e:e8:2f:a6"
+
+  fixed_ip {
+    subnet_id = var.private_subnet_id
+    ip_address = var.ip_test
+  }
+
+  no_security_groups = !var.stateless
+  port_security_enabled = var.stateless
+
+  #security_group_ids = var.stateless ? [openstack_networking_secgroup_v2.stateless_all.id] : []
+  security_group_ids = [openstack_networking_secgroup_v2.test.id]
+  #port_security_enabled = true
 }
 
 resource "openstack_networking_floatingip_v2" "test_float" {
@@ -126,7 +230,7 @@ resource "openstack_networking_floatingip_v2" "test_float" {
 # Test2 Instance (with security group)
 resource "openstack_compute_instance_v2" "test2" {
   name        = "test2"
-  image_name  = "jammy"
+  image_id    = openstack_images_image_v2.jammy.id
   flavor_name = "m1.small"
   key_pair    = openstack_compute_keypair_v2.zlab.name
 
@@ -139,6 +243,11 @@ resource "openstack_networking_port_v2" "test2_port" {
   name           = "test2_port"
   network_id     = openstack_networking_network_v2.private.id
   admin_state_up = "true"
+  mac_address    = "fa:16:3e:4a:41:ad"
+  fixed_ip {
+    subnet_id = var.private_subnet_id
+    ip_address = var.ip_test2
+  }
   security_group_ids = [openstack_networking_secgroup_v2.test.id]
   port_security_enabled = true
 }
@@ -154,6 +263,7 @@ resource "ansible_host" "frontend" {
   name   = openstack_compute_instance_v2.frontend.name
   groups = ["frontend"]
   variables = {
+    ansible_ssh_common_args      = "-o ProxyCommand=\"ssh -W %h:%p -q ubuntu@${openstack_networking_floatingip_v2.test_float.address}\""
     ansible_host                 = openstack_compute_instance_v2.frontend.access_ip_v4
     ansible_user                 = "ubuntu",
     ansible_ssh_private_key_file = "~/.ssh/id_rsa",
@@ -166,6 +276,7 @@ resource "ansible_host" "backend" {
   name   = openstack_compute_instance_v2.backend.name
   groups = ["backend"]
   variables = {
+    ansible_ssh_common_args      = "-o ProxyCommand=\"ssh -W %h:%p -q ubuntu@${openstack_networking_floatingip_v2.test_float.address}\""
     ansible_host                 = openstack_compute_instance_v2.backend.access_ip_v4
     ansible_user                 = "ubuntu",
     ansible_ssh_private_key_file = "~/.ssh/id_rsa",
@@ -186,27 +297,17 @@ resource "ansible_host" "backend" {
 
 # Run Ansible
 resource "null_resource" "ansible" {
-  # Wait for the instances to be ready
-
   triggers = {
     playbook = filesha1("playbook.yml")
     backend = openstack_compute_instance_v2.backend.id
     frontend = openstack_compute_instance_v2.frontend.id
   }
 
+  # Wait until we can SSH to the test instance, which is our ProxyJump to
+  # deploy to the other hosts with Ansible
   provisioner "remote-exec" {
     connection {
-      host = openstack_compute_instance_v2.frontend.access_ip_v4
-      user = "ubuntu"
-      private_key = file("~/.ssh/id_rsa")
-    }
-
-    inline = ["echo 'connected!'"]
-  }
-
-  provisioner "remote-exec" {
-    connection {
-      host = openstack_compute_instance_v2.backend.access_ip_v4
+      host = openstack_networking_floatingip_v2.test_float.address
       user = "ubuntu"
       private_key = file("~/.ssh/id_rsa")
     }
@@ -216,6 +317,6 @@ resource "null_resource" "ansible" {
 
   # Run ansible
   provisioner "local-exec" {
-    command = "ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i inventory.yml playbook.yml"
+    command = "ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i inventory.yml playbook.yml -e wd=${terraform.workspace}"
   }
 }
