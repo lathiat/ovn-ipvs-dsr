@@ -5,7 +5,7 @@
     - name: Wait for cloud-init / user-data to finish
       command: cloud-init status --wait
       changed_when: false
-- hosts: frontend
+- hosts: g_frontend
   become: yes
   tasks:
     - name: grab variable data from backend
@@ -33,7 +33,7 @@
         name: keepalived
         state: restarted
 
-- hosts: backend
+- hosts: g_backend
   become: yes
   tasks:
     - name: Install Apache2
