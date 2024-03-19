@@ -252,7 +252,7 @@ resource "ansible_host" "frontend" {
   name   = openstack_compute_instance_v2.frontend.name
   groups = ["frontend"]
   variables = {
-    ansible_ssh_common_args      = "-o ProxyCommand=\"ssh -W %h:%p -q ubuntu@${openstack_networking_floatingip_v2.test_float.address}\""
+    ansible_ssh_common_args      = "-o StrictHostKeychecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand=\"ssh -o StrictHostKeychecking=no -o UserKnownHostsFile=/dev/null -W %h:%p -q ubuntu@${openstack_networking_floatingip_v2.test_float.address}\""
     ansible_host                 = openstack_compute_instance_v2.frontend.access_ip_v4
     ansible_user                 = "ubuntu",
     ansible_ssh_private_key_file = "~/.ssh/id_rsa",
@@ -265,7 +265,7 @@ resource "ansible_host" "backend" {
   name   = openstack_compute_instance_v2.backend.name
   groups = ["backend"]
   variables = {
-    ansible_ssh_common_args      = "-o ProxyCommand=\"ssh -W %h:%p -q ubuntu@${openstack_networking_floatingip_v2.test_float.address}\""
+    ansible_ssh_common_args      = "-o StrictHostKeychecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand=\"ssh -o StrictHostKeychecking=no -o UserKnownHostsFile=/dev/null -W %h:%p -q ubuntu@${openstack_networking_floatingip_v2.test_float.address}\""
     ansible_host                 = openstack_compute_instance_v2.backend.access_ip_v4
     ansible_user                 = "ubuntu",
     ansible_ssh_private_key_file = "~/.ssh/id_rsa",
