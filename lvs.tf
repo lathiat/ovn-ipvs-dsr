@@ -301,7 +301,7 @@ resource "null_resource" "ansible" {
       private_key = file("~/.ssh/id_rsa")
     }
 
-    inline = ["echo 'connected!'"]
+    inline = [ "/usr/bin/cloud-init status --wait" ]
   }
 
   # Run ansible
